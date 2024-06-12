@@ -29,10 +29,11 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['127.0.0.1']
 
-
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
+    'channels',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -44,6 +45,28 @@ INSTALLED_APPS = [
     'rest_framework',
     'witch_chess_app',
 ]
+
+#sockets
+
+ASGI_APPLICATION = "witch_chess.asgi.application"
+
+from channels.routing import ProtocolTypeRouter, URLRouter
+from django.urls import path
+from witch_chess_app.consumers import MatchConsumer
+
+application = ProtocolTypeRouter({
+    "websocket": URLRouter([
+        path('ws/match/', MatchConsumer.as_asgi()),
+    ]),
+})
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': "channels.layers.InMemoryChannelLayer"
+    }
+}
+
+#middleware
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',

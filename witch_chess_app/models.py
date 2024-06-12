@@ -1,6 +1,12 @@
 from django.db import models
 from django.contrib.auth.models import User #users
 
+class Client (models.Model): #clients and their channels
+    channel_name = models.TextField()
+
+    def __str__(self) -> str:
+        return self.channel_name
+
 class Profile (models.Model): #profile
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     email = models.TextField()
