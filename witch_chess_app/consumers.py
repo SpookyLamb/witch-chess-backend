@@ -3,70 +3,53 @@ from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
 
 class MatchConsumer(WebsocketConsumer):
-    #groups = ["broadcast"]
 
     def connect(self):
+        self.lobby_code = self.scope["url_route"]["kwargs"]["lobby_code"]
+        self.lobby_group_name = f"lobby_{self.lobby_code}"
+
+        async_to_sync(self.channel_layer.group_add)(
+            self.lobby_group_name, self.channel_name
+        )
+
         self.accept()
 
         # To reject the connection, call:
+        # we should reject the connection if there are already two players (two channels in the group)
         #self.close()
+    
+    def disconnect(self, close_code):
+        # Leave room group
+        async_to_sync(self.channel_layer.group_discard)(
+            self.lobby_group_name, self.channel_name
+        )
 
+    # Receive message from WebSocket, which we then forward to game_event, which then sends it (individually) back to everyone in the group
     def receive(self, text_data):
-        #receives a message and echoes it back to the same client that sent it
-
         text_data_json = json.loads(text_data)
         message = text_data_json["message"]
 
+        # Send message to room group
+        async_to_sync(self.channel_layer.group_send)(
+            self.lobby_group_name, {"type": "game.event", "message": message}
+            # Event has a 'type' key corresponding to the name of the method invoked on consumers that receive the event
+            # This translation is done by replacing . with _, thus, game.event calls the game_event method
+        )
+
+    # Receive message from lobby group, then forward that to individual players
+    def game_event(self, event):
+        message = event["message"]
+
+        # Send message to WebSocket
         self.send(text_data=json.dumps({"message": message}))
 
-    def disconnect(self, close_code):
-        # Called when the socket closes
-        pass
+    # def receive(self, text_data):
+    #     #receives a message and echoes it back to the same client that sent it
 
-# class TextRoomConsumer(WebsocketConsumer):
+    #     text_data_json = json.loads(text_data)
+    #     message = text_data_json["message"]
 
-#     def connect(self):
-
-#         self.room_name = self.scope\['url_route'\]['kwargs']['room_name']
-#         self.room_group_name = 'chat_%s' % self.room_name
-#         # Join room group
-#         async_to_sync(self.channel_layer.group_add)(
-#             self.room_group_name,
-#             self.channel_name
-#         )
-#         self.accept()
-
-#     def disconnect(self, close_code):
-#         # Leave room group
-#         async_to_sync(self.channel_layer.group_discard)(
-#             self.room_group_name,
-#             self.channel_name
-#         )
-
-#     def receive(self, text_data):
-#         # Receive message from WebSocket
-#         text_data_json = json.loads(text_data)
-#         text = text_data_json['text']
-#         sender = text_data_json['sender']
-#         # Send message to room group
-#         async_to_sync(self.channel_layer.group_send)(
-#             self.room_group_name,
-#             {
-#                 'type': 'chat_message',
-#                 'message': text,
-#                 'sender': sender
-#             }
-#         )
-
-#     def chat_message(self, event):
-#         # Receive message from room group
-#         text = event['message']
-#         sender = event['sender']
-#         # Send message to WebSocket
-#         self.send(text_data=json.dumps({
-#             'text': text,
-#             'sender': sender
-#         }))
+    #     self.send(text_data=json.dumps({"message": message}))
 
 # class ChatConsumer(WebsocketConsumer):
 #     def connect(self):
