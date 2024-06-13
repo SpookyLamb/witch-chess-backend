@@ -12,9 +12,33 @@ class MatchConsumer(WebsocketConsumer):
             self.lobby_group_name, self.channel_name
         )
 
+        from witch_chess_app.models import Client #these imports have to be done within the class - doing them at the top crashes Django
+        from witch_chess_app.models import Lobby
+
+        # Make a database row with our channel name
+        client = Client.objects.create(channel_name=self.channel_name)
+        client.save()
+
+        # check if there is an existing game with the given lobby_code
+        lobby = Lobby.objects.filter(lobby_code=self.lobby_code)
+
+        if not lobby: #Queryset is empty
+            #create a new lobby and add yourself as "white"
+            lobby = Lobby.objects.create(lobby_code=self.lobby_code, white=client)
+            lobby.save()
+
+            self.color = "White" #set color
+        else: #Queryset has results
+            #join that game as "black"
+            lobby = lobby[0]
+            lobby.black = client
+            lobby.save()
+
+            self.color = "Black" #set color
+
+        # finally, accept the connection
         self.accept()
 
-        # To reject the connection, call:
         # we should reject the connection if there are already two players (two channels in the group)
         #self.close()
     
@@ -24,41 +48,33 @@ class MatchConsumer(WebsocketConsumer):
             self.lobby_group_name, self.channel_name
         )
 
+        # Note that in some rare cases (power loss, etc) disconnect may fail
+        # to run; this naive example would leave zombie channel names around.
+        from witch_chess_app.models import Client
+        Client.objects.filter(channel_name=self.channel_name).delete()
+
     # Receive message from WebSocket, which we then forward to game_event, which then sends it (individually) back to everyone in the group
     def receive(self, text_data):
         text_data_json = json.loads(text_data)
         message = text_data_json["message"]
+        turn = text_data_json["turn"]
 
-        # Send message to room group
-        async_to_sync(self.channel_layer.group_send)(
-            self.lobby_group_name, {"type": "game.event", "message": message}
-            # Event has a 'type' key corresponding to the name of the method invoked on consumers that receive the event
-            # This translation is done by replacing . with _, thus, game.event calls the game_event method
-        )
+        #send initialization information back to the client
+        if turn == "init":
+            self.send(text_data=json.dumps({"dispatch": "initial", "color": self.color}))
+        else:
+            # Send message to room group
+            async_to_sync(self.channel_layer.group_send)(
+                self.lobby_group_name, {"type": "game.event", "message": message, "turn": turn, "dispatch": "gamestate"}
+                # Event has a 'type' key corresponding to the name of the method invoked on consumers that receive the event
+                # This translation is done by replacing . with _, thus, game.event calls the game_event method
+            )
 
     # Receive message from lobby group, then forward that to individual players
     def game_event(self, event):
         message = event["message"]
+        turn = event["turn"]
+        dispatch = event["dispatch"]
 
         # Send message to WebSocket
-        self.send(text_data=json.dumps({"message": message}))
-
-    # def receive(self, text_data):
-    #     #receives a message and echoes it back to the same client that sent it
-
-    #     text_data_json = json.loads(text_data)
-    #     message = text_data_json["message"]
-
-    #     self.send(text_data=json.dumps({"message": message}))
-
-# class ChatConsumer(WebsocketConsumer):
-#     def connect(self):
-#         # Make a database row with our channel name
-#         Clients.objects.create(channel_name=self.channel_name)
-#     def disconnect(self, close_code):
-#         # Note that in some rare cases (power loss, etc) disconnect may fail
-#         # to run; this naive example would leave zombie channel names around.
-#         Clients.objects.filter(channel_name=self.channel_name).delete()
-#     def chat_message(self, event):
-#         # Handles the "chat.message" event when it's sent to us.
-#         self.send(text_data=event["text"])
+        self.send(text_data=json.dumps({"message": message, "turn": turn, "dispatch": dispatch}))

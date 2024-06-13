@@ -11,6 +11,16 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = Profile
         fields = "__all__"
 
+class ClientSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Client
+        fields = "__all__"
+
+class LobbySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Lobby
+        fields = "__all__"
+
 class GameSetSerializer(serializers.ModelSerializer):
     class Meta:
         model = GameSet
