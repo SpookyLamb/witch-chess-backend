@@ -28,7 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-gh=ukkizt2-+0#(t_u4d9yekp4p320x7-b^f)@e0w#@wf%msi+') #this is only used in local dev
 
-ALLOWED_HOSTS = ['127.0.0.1', 'http://localhost:8080', f"{APP_NAME}.fly.dev"]
+ALLOWED_HOSTS = ['127.0.0.1', 'http://localhost:8080', f"{APP_NAME}.fly.dev", 'https://witch-chess.vercel.app']
 
 ENVIRONMENT = os.getenv('ENVIRONMENT', 'local')
 
@@ -83,7 +83,7 @@ MIDDLEWARE = [
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:8080',
-    'https://witch-chess.vercel.app/',
+    'https://witch-chess.vercel.app',
 ]
 
 CORS_ALLOW_METHODS = [
