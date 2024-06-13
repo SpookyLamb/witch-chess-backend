@@ -11,23 +11,30 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
 import os
+
+APP_NAME = os.getenv("FLY_APP_NAME", None)
+DATABASE_PATH = os.getenv("DATABASE_PATH", None)
+CSRF_TRUSTED_ORIGINS = [f"https://{APP_NAME}.fly.dev"]
+
 from pathlib import Path
 from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-gh=ukkizt2-+0#(t_u4d9yekp4p320x7-b^f)@e0w#@wf%msi+'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-gh=ukkizt2-+0#(t_u4d9yekp4p320x7-b^f)@e0w#@wf%msi+') #this is only used in local dev
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+ALLOWED_HOSTS = ['127.0.0.1', 'http://localhost:8080', f"{APP_NAME}.fly.dev"]
 
-ALLOWED_HOSTS = ['127.0.0.1', 'http://localhost:8080']
+ENVIRONMENT = os.getenv('ENVIRONMENT', 'local')
+
+DEBUG = False
+if ENVIRONMENT == 'local':
+    DEBUG = True
 
 # Application definition
 
@@ -91,6 +98,7 @@ MIDDLEWARE = [
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:8080',
+    'https://witch-chess.vercel.app/',
 ]
 
 CORS_ALLOW_METHODS = [
@@ -171,14 +179,20 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'witch_chess.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-DATABASES = {
+# DATABASES = { #local
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
+
+DATABASES = { #production
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': DATABASE_PATH if APP_NAME else BASE_DIR / 'db.sqlite3',
     }
 }
 
