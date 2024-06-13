@@ -17,7 +17,7 @@ class Profile (models.Model): #profile
 class Lobby (models.Model): #lobbies for games
     lobby_code = models.TextField()
     white = models.OneToOneField(Client, on_delete=models.SET_NULL, null=True, related_name="player_white")
-    black = models.OneToOneField(Client, on_delete=models.SET_NULL, null=True, related_name="player_black")    
+    black = models.OneToOneField(Client, on_delete=models.SET_NULL, null=True, related_name="player_black")
 
 class GameSet (models.Model): #a collection of games, up to five
     white_wins = models.IntegerField(default=0)

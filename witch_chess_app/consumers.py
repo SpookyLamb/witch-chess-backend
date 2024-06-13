@@ -26,21 +26,26 @@ class MatchConsumer(WebsocketConsumer):
             #create a new lobby and add yourself as "white"
             lobby = Lobby.objects.create(lobby_code=self.lobby_code, white=client)
             lobby.save()
+            self.color = "White" #set color, passed to client later
 
-            self.color = "White" #set color
         else: #Queryset has results
-            #join that game as "black"
+            #an existing lobby is more complex, we need to check which color is "None"
+            #check white, then black, if both AREN'T None (there are players present), join as a spectator
             lobby = lobby[0]
-            lobby.black = client
-            lobby.save()
-
-            self.color = "Black" #set color
+            
+            if lobby.white == None: #white
+                lobby.white = client
+                lobby.save()
+                self.color = "White"
+            elif lobby.black == None: #black
+                lobby.black = client
+                lobby.save()
+                self.color = "Black"
+            else: #spectator
+                self.color = "Spectate"
 
         # finally, accept the connection
         self.accept()
-
-        # we should reject the connection if there are already two players (two channels in the group)
-        #self.close()
     
     def disconnect(self, close_code):
         # Leave room group
@@ -58,17 +63,21 @@ class MatchConsumer(WebsocketConsumer):
         text_data_json = json.loads(text_data)
         message = text_data_json["message"]
         turn = text_data_json["turn"]
+        dispatch = text_data_json["dispatch"]
 
-        #send initialization information back to the client
-        if turn == "init":
-            self.send(text_data=json.dumps({"dispatch": "initial", "color": self.color}))
-        else:
-            # Send message to room group
-            async_to_sync(self.channel_layer.group_send)(
+        match dispatch:
+            case "init":
+                #send initialization information back to the client
+                self.send(text_data=json.dumps({"dispatch": "initial", "color": self.color}))
+            case "gamestate":
+                #send message containing the current game state to the lobby group
+                async_to_sync(self.channel_layer.group_send)(
                 self.lobby_group_name, {"type": "game.event", "message": message, "turn": turn, "dispatch": "gamestate"}
                 # Event has a 'type' key corresponding to the name of the method invoked on consumers that receive the event
                 # This translation is done by replacing . with _, thus, game.event calls the game_event method
             )
+            case _:
+                print("Bad data received by client!")
 
     # Receive message from lobby group, then forward that to individual players
     def game_event(self, event):
