@@ -26,11 +26,18 @@ class GameSet (models.Model): #a collection of games, up to five
 
 class Game (models.Model): #individual games of chess
     game_set = models.ForeignKey(GameSet, on_delete=models.SET_NULL, null=True)
-    white_time = models.FloatField(180.0) #remaining chess clock time, in seconds
-    black_time = models.FloatField(180.0) #as above, so below
+
+    start_time = models.FloatField(default=0) #time in seconds (since the epoch) when the game first started
+    white_time = models.FloatField(default=180.0) #remaining chess clock time, in seconds
+    black_time = models.FloatField(default=180.0) #as above, so below
+
+    white_turns = models.IntegerField(default=0) #turns taken by white
+    black_turns = models.IntegerField(default=0) #turns taken by black
+
     move_list = models.TextField()
+
     finished = models.BooleanField(default=False)
-    winner = models.IntegerField() #0 for undecided, 1 for white, 2 for black, 3 for stalemate 
+    winner = models.IntegerField(default=0) #0 for undecided, 1 for white, 2 for black, 3 for stalemate 
 
     def __str__(self) -> str:
         return f"GAME {self.id}, MOVES: {self.move_list}"
