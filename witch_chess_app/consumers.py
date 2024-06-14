@@ -80,9 +80,10 @@ class MatchConsumer(WebsocketConsumer):
 
                 if self.lobby.white != None and self.lobby.black != None: #game can start when both players are present
                     game_start = True
-                    #tell any existing players the game can start
-                    async_to_sync(self.channel_layer.group_send)(
-                    self.lobby_group_name, {"type": "game.event", "message": game_start, "turn": None, "dispatch": "gamestart"})
+                    #tell any existing players the game can start, ignore spectators
+                    if self.color != "Spectate":
+                        async_to_sync(self.channel_layer.group_send)(
+                        self.lobby_group_name, {"type": "game.event", "message": game_start, "turn": None, "dispatch": "gamestart"})
             case "gamestate":
                 #send message containing the current game state to the lobby group
                 async_to_sync(self.channel_layer.group_send)(
