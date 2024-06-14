@@ -43,11 +43,17 @@ class MatchConsumer(WebsocketConsumer):
                 self.color = "Black"
             else: #spectator
                 self.color = "Spectate"
+        
+        self.lobby = lobby #save lobby for later
 
         # finally, accept the connection
         self.accept()
     
     def disconnect(self, close_code):
+        # send a message to anyone remaining in the lobby that this client has disconnected
+        async_to_sync(self.channel_layer.group_send)(
+                self.lobby_group_name, {"type": "game.event", "message": self.color, "turn": None, "dispatch": "disconnect"})
+
         # Leave room group
         async_to_sync(self.channel_layer.group_discard)(
             self.lobby_group_name, self.channel_name
@@ -67,8 +73,16 @@ class MatchConsumer(WebsocketConsumer):
 
         match dispatch:
             case "init":
+                game_start = False
+
                 #send initialization information back to the client
                 self.send(text_data=json.dumps({"dispatch": "initial", "color": self.color}))
+
+                if self.lobby.white != None and self.lobby.black != None: #game can start when both players are present
+                    game_start = True
+                    #tell any existing players the game can start
+                    async_to_sync(self.channel_layer.group_send)(
+                    self.lobby_group_name, {"type": "game.event", "message": game_start, "turn": None, "dispatch": "gamestart"})
             case "gamestate":
                 #send message containing the current game state to the lobby group
                 async_to_sync(self.channel_layer.group_send)(
