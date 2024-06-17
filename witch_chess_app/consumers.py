@@ -143,10 +143,22 @@ class MatchConsumer(WebsocketConsumer):
 
         self.send(text_data=json.dumps({"new_time": new_time, "color": color, "dispatch": "time"}))
     
+    def time_out(self, event):
+        color = event["color"]
+        
+        self.send(text_data=json.dumps({"color": color, "dispatch": "timeout"}))
+
     def decrement_time(self):
 
         if self.color == self.turn:
             self.time_remaining -= 1
+
+            if self.time_remaining <= 0:
+                #tell the room that a player has timed out
+                async_to_sync(self.channel_layer.group_send)(
+                self.lobby_group_name, {"type": "time.out", "color": self.color})
+                return
+
             #forward to the group
             async_to_sync(self.channel_layer.group_send)(
             self.lobby_group_name, {"type": "time.event", "color": self.color, "time": self.time_remaining})
