@@ -10,6 +10,7 @@ class MatchConsumer(WebsocketConsumer):
         #init
         self.turn = None
         self.time_remaining = 180.0
+        self.game_set = None
 
         self.lobby_code = self.scope["url_route"]["kwargs"]["lobby_code"]
         self.lobby_group_name = f"lobby_{self.lobby_code}"
@@ -92,9 +93,60 @@ class MatchConsumer(WebsocketConsumer):
                     if self.color != "Spectate":
                         async_to_sync(self.channel_layer.group_send)(
                         self.lobby_group_name, {"type": "begin.game", "message": game_start, "dispatch": "gamestart"})
+            
             case "echo-gamestart":
+                #sent when a GAME SET STARTS, aka the first round
+                #the BLACK client should create the gameset here, and then silently send its id to the rest of the group
+
+                if self.color == "Black":
+                    from witch_chess_app.models import GameSet #likewise as the imports in connect()
+
+                    new_set = GameSet.objects.create() #defaults are all fine
+
+                    async_to_sync(self.channel_layer.group_send)(
+                    self.lobby_group_name, {"type": "save.set", "set": new_set.id})
+
                 self.turn = "White" #begin tracking the current turn
                 self.timer() #initiate timer
+            
+            case "echo-nextround":
+                #sent when a NEW ROUND starts, never the first round
+
+                print(self.color, "nextround")
+
+                self.reset() #reset game vars
+                self.timer() #re-init timer
+
+            case "game-over":
+                #does end of game logic here, "message" is the winner, "turn" is blank
+                #counts wins and usually, though not always, starts a new round
+                #only a count a win if self.color matches the winner, and only count a draw if self.color is Black, to prevent multi-counting
+                #the set ends when:
+                    #the next round would be round 6 (or more, somehow)
+                    #one player already has 3 (or more, somehow) wins
+                #otherwise start a new round
+                self.turn = None
+
+                from witch_chess_app.models import GameSet
+                game_set = GameSet.objects.get(pk=self.game_set)
+
+                if self.color == message: #count our wins, add to the GameSet
+                    if self.color == "White":
+                        game_set.white_wins += 1
+                        game_set.save()
+                    else:
+                        game_set.black_wins += 1
+                        game_set.save()
+                elif message == "Draw" and self.color == "Black":
+                    game_set.draws += 1
+                    game_set.save()
+                
+                if self.color == "Black": #only Black handles starting new rounds (also starts the game by default, due to being P2)
+                    if game_set.white_wins + game_set.black_wins + game_set.draws < 5:
+                        #wait 1.1 seconds to allow any leftover timers to stop, then start a new round
+                        round_timer = Timer(1.1, self.new_game)
+                        round_timer.start()
+
             case "gamestate":
                 #send message containing the current game state to the lobby group
                 async_to_sync(self.channel_layer.group_send)(
@@ -102,6 +154,7 @@ class MatchConsumer(WebsocketConsumer):
                 # Event has a 'type' key corresponding to the name of the method invoked on consumers that receive the event
                 # This translation is done by replacing . with _, thus, game.event calls the game_event method
             )
+            
             case _:
                 print("Bad data received by client!")
 
@@ -145,8 +198,10 @@ class MatchConsumer(WebsocketConsumer):
     
     def time_out(self, event):
         color = event["color"]
-        
+
         self.send(text_data=json.dumps({"color": color, "dispatch": "timeout"}))
+
+        self.reset()
 
     def decrement_time(self):
 
@@ -166,6 +221,10 @@ class MatchConsumer(WebsocketConsumer):
             return self.timer()
         else:
             return
+    
+    def save_set(self, event):
+        #save the newly created set's ID to our game_set var, don't do anything else
+        self.game_set = event["set"] 
 
     def timer(self):
         #decrements the internal timer for a player
@@ -176,3 +235,12 @@ class MatchConsumer(WebsocketConsumer):
             return
         else:
             return
+    
+    def reset(self):
+        #reset game vars back to their starting state
+        self.turn = "White"
+        self.time_remaining = 180.0
+
+    def new_game(self):
+        async_to_sync(self.channel_layer.group_send)(
+        self.lobby_group_name, {"type": "begin.game", "message": True, "dispatch": "next-round"})

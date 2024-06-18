@@ -14,6 +14,10 @@ class ClientAdmin(admin.ModelAdmin):
 class LobbyAdmin(admin.ModelAdmin):
     pass
 
+class GameSetAdmin(admin.ModelAdmin):
+    pass
+
 admin.site.register(Profile, ProfileAdmin)
 admin.site.register(Client, ClientAdmin)
 admin.site.register(Lobby, LobbyAdmin)
+admin.site.register(GameSet, GameSetAdmin)
