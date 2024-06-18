@@ -42,3 +42,18 @@ def get_profile(request):
 #     user = request.user
 #     userID = user.id
 #     return Response({"id": userID})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_lobbies(request):
+    user = request.user
+
+    lobbies = Lobby.objects.all()
+    lobbies_serialized = {}
+
+    for lobby in lobbies:
+        lobby_serialized = LobbySerializer(lobby)
+        data = lobby_serialized.data
+        lobbies_serialized[str(lobby_serialized.data["id"])] = data #add to dictionary
+
+    return Response(lobbies_serialized)
