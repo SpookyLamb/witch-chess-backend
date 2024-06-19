@@ -87,13 +87,21 @@ class MatchConsumer(WebsocketConsumer):
                 #send initialization information back to the client
                 self.send(text_data=json.dumps({"dispatch": "initial", "color": self.color}))
 
+                #also takes the client's privacy request, only accepts it if the client is WHITE, since P1 is the lobby creator
+                #message is a boolean, saves as the lobby's "private" marker
+                
+                if self.color == "White":
+                    print("Set lobby privacy.")
+                    self.lobby.private = message
+                    self.lobby.save()
+
                 if self.lobby.white != None and self.lobby.black != None: #game can start when both players are present
                     game_start = True
                     #tell any existing players the game can start, ignore spectators
                     if self.color != "Spectate":
                         async_to_sync(self.channel_layer.group_send)(
                         self.lobby_group_name, {"type": "begin.game", "message": game_start, "dispatch": "gamestart"})
-            
+
             case "echo-gamestart":
                 #sent when a GAME SET STARTS, aka the first round
                 #the BLACK client should create the gameset here, and then silently send its id to the rest of the group
