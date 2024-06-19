@@ -149,7 +149,23 @@ class MatchConsumer(WebsocketConsumer):
                     game_set.save()
                 
                 if self.color == "Black": #only Black handles starting new rounds (also starts the game by default, due to being P2)
-                    if game_set.white_wins + game_set.black_wins + game_set.draws < 5:
+                    if game_set.white_wins > 2: #white has won the set
+                        async_to_sync(self.channel_layer.group_send)(
+                        self.lobby_group_name, {"type": "player.victory", "color": "White"})
+                    elif game_set.black_wins > 2: #black has won the set
+                        async_to_sync(self.channel_layer.group_send)(
+                        self.lobby_group_name, {"type": "player.victory", "color": "Black"})
+                    elif game_set.white_wins + game_set.black_wins + game_set.draws >= 5: #five rounds completed, declare a winner
+                        if game_set.white_wins > game_set.black_wins: #white, by decision
+                            async_to_sync(self.channel_layer.group_send)(
+                            self.lobby_group_name, {"type": "player.victory", "color": "White"})
+                        elif game_set.black_wins > game_set.white_wins: #black, by decision
+                            async_to_sync(self.channel_layer.group_send)(
+                            self.lobby_group_name, {"type": "player.victory", "color": "Black"})
+                        else: #total draw
+                            async_to_sync(self.channel_layer.group_send)(
+                            self.lobby_group_name, {"type": "player.victory", "color": "Draw"})
+                    else: #undecided
                         #wait 1.1 seconds to allow any leftover timers to stop, then start a new round
                         round_timer = Timer(1.1, self.new_game)
                         round_timer.start()
@@ -195,6 +211,11 @@ class MatchConsumer(WebsocketConsumer):
         message = event["message"]
         dispatch = event["dispatch"]
         self.send(text_data=json.dumps({"message": message, "dispatch": dispatch}))
+
+    # sent when a player wins
+    def player_victory(self, event):
+        color = event["color"]
+        self.send(text_data=json.dumps({"color": color, "dispatch": "victory"}))
 
     # recieves a message regarding a player's remaining time, and forwards that to the group
     def time_event(self, event):
