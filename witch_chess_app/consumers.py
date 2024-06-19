@@ -91,7 +91,6 @@ class MatchConsumer(WebsocketConsumer):
                 #message is a boolean, saves as the lobby's "private" marker
                 
                 if self.color == "White":
-                    print("Set lobby privacy.")
                     self.lobby.private = message
                     self.lobby.save()
 
