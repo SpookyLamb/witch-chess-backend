@@ -187,6 +187,11 @@ class MatchConsumer(WebsocketConsumer):
         turn = event["turn"]
         dispatch = event["dispatch"]
 
+        if "TS" in turn: #time stop (the spell) was used, thus we need to skip all the time steps and just send
+            turn = turn.replace("TS", "") #remove the "TS"
+            self.send(text_data=json.dumps({"message": message, "turn": turn, "dispatch": dispatch}))
+            return
+
         self.turn = turn #update current turn
 
         if self.color != "Spectate":
