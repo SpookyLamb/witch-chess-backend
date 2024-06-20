@@ -169,6 +169,11 @@ class MatchConsumer(WebsocketConsumer):
                         #wait 1.1 seconds to allow any leftover timers to stop, then start a new round
                         round_timer = Timer(1.1, self.new_game)
                         round_timer.start()
+            
+            case "spell":
+                #turn is color, message is spell
+                async_to_sync(self.channel_layer.group_send)(
+                self.lobby_group_name, {"type": "spell.used", "color": turn, "spell": message})
 
             case "gamestate":
                 #send message containing the current game state to the lobby group
@@ -257,7 +262,13 @@ class MatchConsumer(WebsocketConsumer):
     
     def save_set(self, event):
         #save the newly created set's ID to our game_set var, don't do anything else
-        self.game_set = event["set"] 
+        self.game_set = event["set"]
+
+    def spell_used(self, event):
+        color = event["color"]
+        spell = event["spell"]
+
+        self.send(text_data=json.dumps({"color": color, "spell": spell, "dispatch": "spell"}))
 
     def timer(self):
         #decrements the internal timer for a player
