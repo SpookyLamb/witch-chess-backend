@@ -296,6 +296,8 @@ class MatchConsumer(WebsocketConsumer):
 
     def timer(self):
         #decrements the internal timer for a player
+        if self.turn == None:
+            return
 
         if self.color == self.turn:
             timer = Timer(1.0, self.decrement_time)
