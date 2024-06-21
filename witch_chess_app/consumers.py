@@ -118,15 +118,15 @@ class MatchConsumer(WebsocketConsumer):
                     self.lobby_group_name, {"type": "save.set", "set": new_set.id})
 
                 self.turn = "White" #begin tracking the current turn
-                self.timer() #initiate timer
             
             case "echo-nextround":
                 #sent when a NEW ROUND starts, never the first round
-
-                print(self.color, "nextround")
-
                 self.reset() #reset game vars
-                self.timer() #re-init timer
+            
+            case "echo-timer":
+                #starts timers, sent shortly after gamestart and nextround
+                if self.color == "White": #black doesn't need to do this, only white
+                    self.timer()
 
             case "game-over":
                 #does end of game logic here, "message" is the winner, "turn" is blank
