@@ -201,7 +201,7 @@ class MatchConsumer(WebsocketConsumer):
 
         if self.color != "Spectate":
             if self.turn != self.color: #"my" player's turn just ended
-                self.time_remaining += 2 #when a player's turn ends, they get a little time back
+                self.time_remaining += 3 #when a player's turn ends, they get a little time back
                 async_to_sync(self.channel_layer.group_send)( #forward to the group
                 self.lobby_group_name, {"type": "time.event", "color": self.color, "time": self.time_remaining})
             
