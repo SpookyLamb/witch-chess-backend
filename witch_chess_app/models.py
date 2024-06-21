@@ -12,6 +12,7 @@ class Client (models.Model): #clients and their channels
 class Profile (models.Model): #profile
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     email = models.TextField()
+    wins = models.IntegerField(default=0)
 
     def __str__(self) -> str:
         return self.user.username
