@@ -28,13 +28,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-gh=ukkizt2-+0#(t_u4d9yekp4p320x7-b^f)@e0w#@wf%msi+') #this is only used in local dev
 
-ALLOWED_HOSTS = ['127.0.0.1', 'http://localhost:8080', f"{APP_NAME}.fly.dev"]
+ALLOWED_HOSTS = ['127.0.0.1', 'http://localhost:8080', f"{APP_NAME}.fly.dev", 'https://witch-chess.vercel.app']
 
 ENVIRONMENT = os.getenv('ENVIRONMENT', 'local')
 
 DEBUG = False
 if ENVIRONMENT == 'local':
     DEBUG = True
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Application definition
 
@@ -67,21 +70,6 @@ application = ProtocolTypeRouter({
     ]),
 })
 
-# CHANNEL_LAYERS = { #local
-#     'default': {
-#         'BACKEND': "channels.layers.InMemoryChannelLayer"
-#     }
-# }
-
-CHANNEL_LAYERS = { #local, with redis and docker
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
-        },
-    },
-}
-
 #middleware
 
 MIDDLEWARE = [
@@ -98,7 +86,7 @@ MIDDLEWARE = [
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:8080',
-    'https://witch-chess.vercel.app/',
+    'https://witch-chess.vercel.app',
 ]
 
 CORS_ALLOW_METHODS = [
@@ -178,6 +166,63 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'witch_chess.wsgi.application'
+
+#REDIS
+
+from urllib.parse import urlparse
+# code from https://stackoverflow.com/questions/62777377/long-url-including-a-key-causes-unicode-idna-codec-decoding-error-whilst-using
+
+def parse_redis_url(url):
+    """ parses a redis url into component parts, stripping password from the host.
+    Long keys in the url result in parsing errors, since labels within a hostname cannot exceed 64 characters under
+    idna rules.
+    In that event, we remove the key/password so that it can be passed separately to the RedisChannelLayer.
+    """
+    parsed = urlparse(url)
+    parts = parsed.netloc.split(':')
+    host = ':'.join(parts[0:-1])
+    port = parts[-1]
+    path = parsed.path.split('/')[1:]
+    db = int(path[0]) if len(path) >= 1 else 0
+
+    user, password = (None, None)
+    if '@' in host:
+        creds, host = host.split('@')
+        user, password = creds.split(':')
+        host = f'{user}@{host}'
+
+    return host, port, user, password, db
+
+REDIS_URL = os.environ.get('REDIS_URL', default='redis://localhost:6379')
+REDIS_HOST, REDIS_PORT, REDIS_USER, REDIS_PASSWORD, REDIS_DB = parse_redis_url(REDIS_URL)
+
+CHANNEL_LAYERS = { #production
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [{
+                'address': f'redis://{REDIS_HOST}:{REDIS_PORT}',
+                'db': REDIS_DB,
+                'password': REDIS_PASSWORD,
+            }],
+        },
+    },
+}
+
+# CHANNEL_LAYERS = { #local
+#     'default': {
+#         'BACKEND': "channels.layers.InMemoryChannelLayer"
+#     }
+# }
+
+# CHANNEL_LAYERS = { #local, with redis and docker
+#     "default": {
+#         "BACKEND": "channels_redis.core.RedisChannelLayer",
+#         "CONFIG": {
+#             "hosts": [("127.0.0.1", 6379)],
+#         },
+#     },
+# }
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases

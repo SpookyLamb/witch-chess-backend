@@ -42,3 +42,37 @@ def get_profile(request):
 #     user = request.user
 #     userID = user.id
 #     return Response({"id": userID})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_lobbies(request):
+    user = request.user
+
+    lobbies = Lobby.objects.all()
+    lobbies_serialized = {}
+
+    for lobby in lobbies:
+        lobby_serialized = LobbySerializer(lobby)
+        data = lobby_serialized.data
+        lobbies_serialized[str(lobby_serialized.data["id"])] = data #add to dictionary
+
+    return Response(lobbies_serialized)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_win(request):
+    user = request.user
+    profile = user.profile
+
+    profile.wins += 1
+    profile.save()
+
+    return Response()
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_wins(request):
+    user = request.user
+    profile = user.profile
+
+    return Response(profile.wins)

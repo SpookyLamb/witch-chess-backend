@@ -1,10 +1,17 @@
 import json
+import time
+from threading import Timer
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
 
 class MatchConsumer(WebsocketConsumer):
 
     def connect(self):
+        #init
+        self.turn = None
+        self.time_remaining = 180.0
+        self.game_set = None
+
         self.lobby_code = self.scope["url_route"]["kwargs"]["lobby_code"]
         self.lobby_group_name = f"lobby_{self.lobby_code}"
 
@@ -43,15 +50,23 @@ class MatchConsumer(WebsocketConsumer):
                 self.color = "Black"
             else: #spectator
                 self.color = "Spectate"
+        
+        self.lobby = lobby #save lobby for later
 
         # finally, accept the connection
         self.accept()
     
     def disconnect(self, close_code):
+        # send a message to anyone remaining in the lobby that this client has disconnected
+        async_to_sync(self.channel_layer.group_send)(
+                self.lobby_group_name, {"type": "player.disconnect", "message": self.color, "dispatch": "disconnect"})
+
         # Leave room group
         async_to_sync(self.channel_layer.group_discard)(
             self.lobby_group_name, self.channel_name
         )
+
+        self.turn = None #kill any running timers
 
         # Note that in some rare cases (power loss, etc) disconnect may fail
         # to run; this naive example would leave zombie channel names around.
@@ -67,15 +82,118 @@ class MatchConsumer(WebsocketConsumer):
 
         match dispatch:
             case "init":
+                game_start = False
+
                 #send initialization information back to the client
                 self.send(text_data=json.dumps({"dispatch": "initial", "color": self.color}))
+
+                #also takes the client's privacy request, only accepts it if the client is WHITE, since P1 is the lobby creator
+                #message is a boolean, saves as the lobby's "private" marker
+                
+                if self.color == "White":
+                    self.lobby.private = message
+                    self.lobby.save()
+
+                if self.lobby.white != None and self.lobby.black != None: #game can start when both players are present
+                    game_start = True
+                    #tell any existing players the game can start, ignore spectators
+                    if self.color != "Spectate":
+                        async_to_sync(self.channel_layer.group_send)(
+                        self.lobby_group_name, {"type": "begin.game", "message": game_start, "dispatch": "gamestart"})
+                    else:
+                        #spectators should request the gamestate from the other clients
+                        async_to_sync(self.channel_layer.group_send)(
+                        self.lobby_group_name, {"type": "request.set"})
+
+            case "echo-gamestart":
+                #sent when a GAME SET STARTS, aka the first round
+                #the BLACK client should create the gameset here, and then silently send its id to the rest of the group
+
+                if self.color == "Black":
+                    from witch_chess_app.models import GameSet #likewise as the imports in connect()
+
+                    new_set = GameSet.objects.create() #defaults are all fine
+
+                    async_to_sync(self.channel_layer.group_send)(
+                    self.lobby_group_name, {"type": "save.set", "set": new_set.id})
+
+                self.turn = "White" #begin tracking the current turn
+            
+            case "echo-nextround":
+                #sent when a NEW ROUND starts, never the first round
+                self.reset() #reset game vars
+            
+            case "echo-timer":
+                #starts timers, sent shortly after gamestart and nextround
+                if self.color == "White": #black doesn't need to do this, only white
+                    self.timer()
+
+            case "game-over":
+                #does end of game logic here, "message" is the winner, "turn" is blank
+                #counts wins and usually, though not always, starts a new round
+                #only a count a win if self.color matches the winner, and only count a draw if self.color is Black, to prevent multi-counting
+                #the set ends when:
+                    #the next round would be round 6 (or more, somehow)
+                    #one player already has 3 (or more, somehow) wins
+                #otherwise start a new round
+                self.turn = None
+
+                from witch_chess_app.models import GameSet
+                game_set = GameSet.objects.get(pk=self.game_set)
+
+                if self.color == message: #count our wins, add to the GameSet
+                    if self.color == "White":
+                        game_set.white_wins += 1
+                        game_set.save()
+                    else:
+                        game_set.black_wins += 1
+                        game_set.save()
+                elif message == "Draw" and self.color == "Black":
+                    game_set.draws += 1
+                    game_set.save()
+                
+                if self.color == "Black": #only Black handles starting new rounds (also starts the game by default, due to being P2)
+                    if game_set.white_wins > 2: #white has won the set
+                        async_to_sync(self.channel_layer.group_send)(
+                        self.lobby_group_name, {"type": "player.victory", "color": "White"})
+                    elif game_set.black_wins > 2: #black has won the set
+                        async_to_sync(self.channel_layer.group_send)(
+                        self.lobby_group_name, {"type": "player.victory", "color": "Black"})
+                    elif game_set.white_wins + game_set.black_wins + game_set.draws >= 5: #five rounds completed, declare a winner
+                        if game_set.white_wins > game_set.black_wins: #white, by decision
+                            async_to_sync(self.channel_layer.group_send)(
+                            self.lobby_group_name, {"type": "player.victory", "color": "White"})
+                        elif game_set.black_wins > game_set.white_wins: #black, by decision
+                            async_to_sync(self.channel_layer.group_send)(
+                            self.lobby_group_name, {"type": "player.victory", "color": "Black"})
+                        else: #total draw
+                            async_to_sync(self.channel_layer.group_send)(
+                            self.lobby_group_name, {"type": "player.victory", "color": "Draw"})
+                    else: #undecided
+                        #wait 1.1 seconds to allow any leftover timers to stop, then start a new round
+                        round_timer = Timer(1.1, self.new_game)
+                        round_timer.start()
+            
+            case "spell":
+                #turn is color, message is spell
+                async_to_sync(self.channel_layer.group_send)(
+                self.lobby_group_name, {"type": "spell.used", "color": turn, "spell": message})
+
             case "gamestate":
                 #send message containing the current game state to the lobby group
+                if (self.game_set != None):
+                    from witch_chess_app.models import GameSet
+                    game_set = GameSet.objects.get(pk=self.game_set)
+                    game_set.last_state = json.dumps(message) #save a JSON dump of the current board state
+                    game_set.last_turn = turn #doesn't need to be JSON dumped
+                    game_set.save()
+
                 async_to_sync(self.channel_layer.group_send)(
                 self.lobby_group_name, {"type": "game.event", "message": message, "turn": turn, "dispatch": "gamestate"}
                 # Event has a 'type' key corresponding to the name of the method invoked on consumers that receive the event
                 # This translation is done by replacing . with _, thus, game.event calls the game_event method
             )
+            
             case _:
                 print("Bad data received by client!")
 
@@ -85,5 +203,114 @@ class MatchConsumer(WebsocketConsumer):
         turn = event["turn"]
         dispatch = event["dispatch"]
 
+        if "TS" in turn: #time stop (the spell) was used, thus we need to skip all the time steps and just send
+            turn = turn.replace("TS", "") #remove the "TS"
+            self.send(text_data=json.dumps({"message": message, "turn": turn, "dispatch": dispatch}))
+            return
+
+        self.turn = turn #update current turn
+
+        if self.color != "Spectate":
+            if self.turn != self.color: #"my" player's turn just ended
+                self.time_remaining += 3 #when a player's turn ends, they get a little time back
+                async_to_sync(self.channel_layer.group_send)( #forward to the group
+                self.lobby_group_name, {"type": "time.event", "color": self.color, "time": self.time_remaining})
+            
+            self.timer() #initiate timers
+
         # Send message to WebSocket
         self.send(text_data=json.dumps({"message": message, "turn": turn, "dispatch": dispatch}))
+    
+    # recieved when a player disconnects
+    def player_disconnect(self, event):
+        message = event["message"]
+        dispatch = event["dispatch"]
+        self.send(text_data=json.dumps({"message": message, "dispatch": dispatch}))
+
+    # recieved when a game begins
+    def begin_game(self, event):
+        message = event["message"]
+        dispatch = event["dispatch"]
+        self.send(text_data=json.dumps({"message": message, "dispatch": dispatch}))
+
+    # sent when a player wins
+    def player_victory(self, event):
+        color = event["color"]
+        self.send(text_data=json.dumps({"color": color, "dispatch": "victory"}))
+
+    # recieves a message regarding a player's remaining time, and forwards that to the group
+    def time_event(self, event):
+        color = event["color"]
+        new_time = event["time"]
+
+        self.send(text_data=json.dumps({"new_time": new_time, "color": color, "dispatch": "time"}))
+    
+    def time_out(self, event):
+        color = event["color"]
+
+        self.send(text_data=json.dumps({"color": color, "dispatch": "timeout"}))
+
+        self.reset()
+
+    def decrement_time(self):
+
+        if self.color == self.turn:
+            self.time_remaining -= 1
+
+            if self.time_remaining <= 0:
+                #tell the room that a player has timed out
+                async_to_sync(self.channel_layer.group_send)(
+                self.lobby_group_name, {"type": "time.out", "color": self.color})
+                return
+
+            #forward to the group
+            async_to_sync(self.channel_layer.group_send)(
+            self.lobby_group_name, {"type": "time.event", "color": self.color, "time": self.time_remaining})
+            
+            return self.timer()
+        else:
+            return
+    
+    def save_set(self, event):
+        #save the newly created set's ID to our game_set var, then grab the current game state
+        if self.game_set == None:
+            self.game_set = event["set"]
+
+            #in case of mid-match-join or spectate
+            from witch_chess_app.models import GameSet
+            game_set = GameSet.objects.get(pk=self.game_set)
+            message = json.loads(game_set.last_state) #grab and undump the last board state (default None/Null)\
+            turn = game_set.last_turn #doesn't need to be undumped
+            self.send(text_data=json.dumps({"message": message, "turn": turn, "dispatch": "gamestate"}))
+
+    def spell_used(self, event):
+        color = event["color"]
+        spell = event["spell"]
+
+        self.send(text_data=json.dumps({"color": color, "spell": spell, "dispatch": "spell"}))
+
+    def request_set(self, event):
+        if self.game_set != None: #don't send out a bad set
+            async_to_sync(self.channel_layer.group_send)(
+            self.lobby_group_name, {"type": "save.set", "set": self.game_set})
+
+    def timer(self):
+        #decrements the internal timer for a player
+        if self.turn == None:
+            return
+
+        if self.color == self.turn:
+            timer = Timer(1.0, self.decrement_time)
+            timer.start()
+            return
+        else:
+            return
+    
+    def reset(self):
+        #reset game vars back to their starting state
+        self.turn = "White"
+        self.time_remaining = 180.0
+
+    def new_game(self):
+        async_to_sync(self.channel_layer.group_send)(
+        self.lobby_group_name, {"type": "begin.game", "message": True, "dispatch": "next-round"})
