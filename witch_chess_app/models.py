@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User #users
 
+import json
+
 class Client (models.Model): #clients and their channels
     channel_name = models.TextField()
 
@@ -24,6 +26,8 @@ class GameSet (models.Model): #a collection of games, up to five
     white_wins = models.IntegerField(default=0)
     black_wins = models.IntegerField(default=0)
     draws = models.IntegerField(default=0)
+    last_state = models.TextField(default=json.dumps(None)) #stores a JSON dump of the last board state, defaults to Null (which is ignored by the front end)
+    last_turn = models.TextField(default="White") #stores the next turn
 
 class Game (models.Model): #individual games of chess
     game_set = models.ForeignKey(GameSet, on_delete=models.SET_NULL, null=True)

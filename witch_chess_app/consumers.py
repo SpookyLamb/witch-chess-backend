@@ -100,6 +100,10 @@ class MatchConsumer(WebsocketConsumer):
                     if self.color != "Spectate":
                         async_to_sync(self.channel_layer.group_send)(
                         self.lobby_group_name, {"type": "begin.game", "message": game_start, "dispatch": "gamestart"})
+                    else:
+                        #spectators should request the gamestate from the other clients
+                        async_to_sync(self.channel_layer.group_send)(
+                        self.lobby_group_name, {"type": "request.set"})
 
             case "echo-gamestart":
                 #sent when a GAME SET STARTS, aka the first round
@@ -177,6 +181,13 @@ class MatchConsumer(WebsocketConsumer):
 
             case "gamestate":
                 #send message containing the current game state to the lobby group
+                if (self.game_set != None):
+                    from witch_chess_app.models import GameSet
+                    game_set = GameSet.objects.get(pk=self.game_set)
+                    game_set.last_state = json.dumps(message) #save a JSON dump of the current board state
+                    game_set.last_turn = turn #doesn't need to be JSON dumped
+                    game_set.save()
+
                 async_to_sync(self.channel_layer.group_send)(
                 self.lobby_group_name, {"type": "game.event", "message": message, "turn": turn, "dispatch": "gamestate"}
                 # Event has a 'type' key corresponding to the name of the method invoked on consumers that receive the event
@@ -261,14 +272,27 @@ class MatchConsumer(WebsocketConsumer):
             return
     
     def save_set(self, event):
-        #save the newly created set's ID to our game_set var, don't do anything else
-        self.game_set = event["set"]
+        #save the newly created set's ID to our game_set var, then grab the current game state
+        if self.game_set == None:
+            self.game_set = event["set"]
+
+            #in case of mid-match-join or spectate
+            from witch_chess_app.models import GameSet
+            game_set = GameSet.objects.get(pk=self.game_set)
+            message = json.loads(game_set.last_state) #grab and undump the last board state (default None/Null)\
+            turn = game_set.last_turn #doesn't need to be undumped
+            self.send(text_data=json.dumps({"message": message, "turn": turn, "dispatch": "gamestate"}))
 
     def spell_used(self, event):
         color = event["color"]
         spell = event["spell"]
 
         self.send(text_data=json.dumps({"color": color, "spell": spell, "dispatch": "spell"}))
+
+    def request_set(self, event):
+        if self.game_set != None: #don't send out a bad set
+            async_to_sync(self.channel_layer.group_send)(
+            self.lobby_group_name, {"type": "save.set", "set": self.game_set})
 
     def timer(self):
         #decrements the internal timer for a player
